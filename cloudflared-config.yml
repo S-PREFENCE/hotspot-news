@@ -1,0 +1,7 @@
+tunnel: prenceyours2026
+credentials-file: C:\Users\ZhuanZ\.cloudflared\prenceyours2026.json
+
+ingress:
+  - hostname: prenceyours2026.com
+    service: http://localhost:5000
+  - service: http_status:404

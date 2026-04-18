@@ -1,7 +1,7 @@
 {
-  "name": "每日热点 · 实时热搜",
-  "short_name": "每日热点",
-  "description": "实时追踪微博、百度、知乎热点，每天20条热点新闻一目了然",
+  "name": "PrenceYours 2026 · 实时热搜",
+  "short_name": "PrenceYours",
+  "description": "PrenceYours 2026 - 实时追踪微博、百度、知乎、抖音、快手热点，每天热门话题一目了然",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0F0E17",

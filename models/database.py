@@ -105,6 +105,22 @@ def get_available_dates(limit: int = 7) -> list:
         conn.close()
 
 
+def cleanup_old_data(days: int = 7):
+    """清理指定天数之前的旧数据，保留最近 N 天"""
+    cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = get_connection()
+    try:
+        cursor = conn.execute("DELETE FROM hotspots WHERE date < ?", (cutoff,))
+        conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"已清理 {cutoff} 之前的 {cursor.rowcount} 条旧数据")
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"清理旧数据失败: {e}")
+    finally:
+        conn.close()
+
+
 def get_stats() -> dict:
     """获取数据库统计信息"""
     conn = get_connection()

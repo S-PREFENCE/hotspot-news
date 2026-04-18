@@ -2,7 +2,7 @@
    Service Worker - 离线缓存 + 静默更新
    ═══════════════════════════════════════════════ */
 
-const CACHE_NAME = 'hotspot-v3';
+const CACHE_NAME = 'hotspot-v7';
 
 // 需要预缓存的静态资源
 const PRECACHE_URLS = [
@@ -48,18 +48,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 静态资源：缓存优先，后台更新
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request).then((response) => {
+  // HTML 页面：网络优先，确保总是加载最新页面（含版本号参数）
+  if (url.pathname === '/' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
         if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
-      return cached || fetchPromise;
-    })
+  // 静态资源：网络优先，离线时回退缓存
+  event.respondWith(
+    fetch(event.request).then((response) => {
+      if (response && response.status === 200) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });

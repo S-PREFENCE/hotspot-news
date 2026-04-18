@@ -9,6 +9,8 @@ const state = {
   allItems: [],
   autoRefreshTimer: null,
   deferredPrompt: null,   // PWA 安装提示
+  availableDates: [],     // 有数据的日期列表
+  weekDates: [],          // 最近7天日期列表
 };
 
 // ── DOM ───────────────────────────────────
@@ -38,6 +40,13 @@ const installOverlay = $('installOverlay');
 const installClose   = $('installClose');
 const installSteps   = $('installSteps');
 const installActionBtn = $('installActionBtn');
+const datePills     = $('datePills');
+const passwordOverlay = $('passwordOverlay');
+const passwordInput   = $('passwordInput');
+const passwordClose   = $('passwordClose');
+const passwordConfirm = $('passwordConfirm');
+const passwordError   = $('passwordError');
+const passwordToggle  = $('passwordToggle');
 
 // ── 浏览器检测 ───────────────────────────────
 function detectBrowser() {
@@ -234,8 +243,8 @@ function formatHot(val) {
 }
 
 // ── 平台配置 ───────────────────────────────
-const sourceLabel = { weibo:'微博', baidu:'百度', zhihu:'知乎' };
-const sourceColor = { weibo:'#E6162D', baidu:'#4E6EF2', zhihu:'#0084FF' };
+const sourceLabel = { weibo:'微博', baidu:'百度', zhihu:'知乎', douyin:'抖音', kuaishou:'快手' };
+const sourceColor = { weibo:'#E6162D', baidu:'#4E6EF2', zhihu:'#0084FF', douyin:'#FE2C55', kuaishou:'#FF4906' };
 
 function sourceDot(src) {
   const c = sourceColor[src] || '#888';
@@ -246,9 +255,12 @@ function sourceDot(src) {
 // ── 渲染热点列表 ───────────────────────────
 function renderList(items) {
   if (!items || items.length === 0) {
-    feedContainer.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-3)">
-      <div style="font-size:36px;margin-bottom:12px">📭</div>
-      <div>暂无热点数据</div></div>`;
+    const today = toDateStr(new Date());
+    const isHistory = state.currentDate !== today;
+    const emptyMsg = isHistory
+      ? `<div style="font-size:36px;margin-bottom:12px">📋</div><div>该日暂无历史数据</div><div style="font-size:12px;margin-top:6px;opacity:0.6">历史数据随每日定时抓取自动积累</div>`
+      : `<div style="font-size:36px;margin-bottom:12px">📭</div><div>暂无热点数据</div>`;
+    feedContainer.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-3)">${emptyMsg}</div>`;
     statsCount.textContent = '0 条';
     return;
   }
@@ -375,19 +387,83 @@ async function loadHotspots(dateStr, silent = false) {
 }
 
 // ── 日期切换 ───────────────────────────────
-function setDate(dateStr) {
+
+/** 生成最近7天的日期列表（从今天往前推6天） */
+function generateWeekDates() {
+  const dates = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(toDateStr(d));
+  }
+  return dates;
+}
+
+/** 获取有数据的日期列表 */
+async function fetchAvailableDates() {
+  try {
+    const res = await fetch('/api/dates?limit=7');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.dates || [];
+  } catch (e) {
+    console.error('获取日期列表失败:', e);
+    return [];
+  }
+}
+
+/** 渲染7天日期pill */
+function renderDatePills() {
+  const wd = ['日','一','二','三','四','五','六'];
   const today = toDateStr(new Date());
   const yesterday = toDateStr(new Date(Date.now() - 86400000));
+
+  let html = '';
+  state.weekDates.forEach(dateStr => {
+    const d = new Date(dateStr + 'T00:00:00');
+    const dayNum = d.getDate();
+    const weekDay = wd[d.getDay()];
+    const hasData = state.availableDates.includes(dateStr);
+    const isActive = dateStr === state.currentDate;
+    const isToday = dateStr === today;
+    const isYesterday = dateStr === yesterday;
+
+    // 显示标签：今天/昨天/X日
+    let label;
+    if (isToday) label = '今天';
+    else if (isYesterday) label = '昨天';
+    else label = `${dayNum}日`;
+
+    const classes = [
+      'pill',
+      isActive ? 'pill-active' : '',
+      hasData ? 'has-data' : '',
+      (!hasData && !isActive) ? 'pill-empty' : '',
+    ].filter(Boolean).join(' ');
+
+    html += `<button class="${classes}" data-date="${dateStr}" title="${d.getMonth()+1}月${dayNum}日 周${weekDay}">
+      <span class="pill-dot"></span>${label}
+    </button>`;
+  });
+  datePills.innerHTML = html;
+
+  // 绑定pill点击事件
+  datePills.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dateStr = btn.dataset.date;
+      const hasData = state.availableDates.includes(dateStr);
+      if (dateStr !== state.currentDate) {
+        setDate(dateStr);
+      }
+    });
+  });
+}
+
+function setDate(dateStr) {
   state.currentDate = dateStr;
   dateLabel.textContent = formatDateLabel(dateStr);
-
-  document.querySelectorAll('.pill').forEach(btn => {
-    const type = btn.dataset.type;
-    btn.classList.toggle('pill-active',
-      (type === 'today' && dateStr === today) ||
-      (type === 'yesterday' && dateStr === yesterday)
-    );
-  });
+  renderDatePills();
   loadHotspots(dateStr);
 }
 
@@ -428,7 +504,7 @@ function copyLink() {
       fallbackCopy(url);
     }
   } else if (navigator.share) {
-    navigator.share({ title: '每日热点 · 实时热搜', url }).catch(() => {});
+    navigator.share({ title: 'PrenceYours 2026 · 实时热搜', url }).catch(() => {});
   } else if (navigator.clipboard) {
     navigator.clipboard.writeText(url).then(() => showToast('链接已复制！'));
   } else {
@@ -512,17 +588,58 @@ function initParticles() {
   draw();
 }
 
+// ── 密码验证 ───────────────────────────────
+let _passwordCallback = null;
+
+function showPasswordModal(callback) {
+  _passwordCallback = callback;
+  passwordInput.value = '';
+  passwordError.classList.add('hidden');
+  passwordOverlay.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => passwordInput.focus(), 100);
+}
+
+function closePasswordModal() {
+  passwordOverlay.classList.add('hidden');
+  document.body.style.overflow = '';
+  _passwordCallback = null;
+}
+
+async function verifyPassword() {
+  const pwd = passwordInput.value.trim();
+  if (!pwd) {
+    passwordError.textContent = '请输入密码';
+    passwordError.classList.remove('hidden');
+    return;
+  }
+  try {
+    const res = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    if (res.status === 403) {
+      passwordError.textContent = '密码错误，请重试';
+      passwordError.classList.remove('hidden');
+      passwordInput.value = '';
+      passwordInput.focus();
+      return;
+    }
+    if (!res.ok) throw new Error('验证失败');
+    // 密码正确
+    closePasswordModal();
+    showToast('验证通过，正在刷新...');
+    if (_passwordCallback) _passwordCallback();
+  } catch (e) {
+    passwordError.textContent = '验证失败，请重试';
+    passwordError.classList.remove('hidden');
+  }
+}
+
 // ── 事件绑定 ───────────────────────────────
 $('prevDay').addEventListener('click', () => changeDate(-1));
 $('nextDay').addEventListener('click', () => changeDate(1));
-
-document.querySelectorAll('.pill').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const today = toDateStr(new Date());
-    const yesterday = toDateStr(new Date(Date.now() - 86400000));
-    setDate(btn.dataset.type === 'today' ? today : yesterday);
-  });
-});
 
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -534,9 +651,11 @@ document.querySelectorAll('.tab').forEach(btn => {
 });
 
 refreshBtn.addEventListener('click', () => {
-  refreshBtn.classList.add('spinning');
-  loadHotspots(state.currentDate).finally(() => {
-    setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+  showPasswordModal(() => {
+    refreshBtn.classList.add('spinning');
+    loadHotspots(state.currentDate).finally(() => {
+      setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+    });
   });
 });
 
@@ -561,17 +680,74 @@ modalClose.addEventListener('click', closeModal);
 modalOverlay.addEventListener('click', (e) => {
   if (e.target === modalOverlay) closeModal();
 });
+
+// 密码弹窗事件
+passwordClose.addEventListener('click', closePasswordModal);
+passwordOverlay.addEventListener('click', (e) => {
+  if (e.target === passwordOverlay) closePasswordModal();
+});
+passwordConfirm.addEventListener('click', verifyPassword);
+passwordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') verifyPassword();
+});
+passwordToggle.addEventListener('click', () => {
+  const isPassword = passwordInput.type === 'password';
+  passwordInput.type = isPassword ? 'text' : 'password';
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeModal();
     closeInstallGuide();
+    closePasswordModal();
   }
 });
 
+// ── 版本更新检测 ─────────────────────────────
+let _currentVersion = null;
+
+async function checkVersionUpdate() {
+  try {
+    const res = await fetch('/api/version');
+    if (!res.ok) return;
+    const data = await res.json();
+    const newVer = data.version;
+
+    if (!_currentVersion) {
+      _currentVersion = newVer;
+      return;
+    }
+
+    if (_currentVersion !== newVer) {
+      // 版本号变了，提示刷新并更新SW缓存
+      _currentVersion = newVer;
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          reg.update(); // 触发SW更新
+        }
+      }
+      showToast('有新版本，已自动更新');
+      setTimeout(() => location.reload(), 1500);
+    }
+  } catch (e) {
+    // 静默失败
+  }
+}
+
 // ── 初始化 ─────────────────────────────────
-(function init() {
+(async function init() {
   const today = toDateStr(new Date());
+  state.weekDates = generateWeekDates();
+  state.availableDates = await fetchAvailableDates();
   setDate(today);
   startAutoRefresh();
   initParticles();
+  // 每3分钟检测一次版本更新
+  checkVersionUpdate();
+  setInterval(checkVersionUpdate, 3 * 60 * 1000);
+  // 每10分钟刷新一次日期列表（检查哪些天有数据）
+  setInterval(async () => {
+    state.availableDates = await fetchAvailableDates();
+    renderDatePills();
+  }, 10 * 60 * 1000);
 })();

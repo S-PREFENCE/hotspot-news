@@ -3,12 +3,23 @@ import logging
 import os
 from datetime import datetime, date, timedelta
 from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import atexit
 
-from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_available_dates, get_stats
+from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_available_dates, get_stats, cleanup_old_data
 from scraper.merger import merge_and_rank
+
+# ── 版本号 ─────────────────────────────────────────
+def get_app_version():
+    """读取版本号文件"""
+    try:
+        version_path = os.path.join(os.path.dirname(__file__), "版本号.txt")
+        with open(version_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
 
 # ── 日志配置 ──────────────────────────────────────
 logging.basicConfig(
@@ -21,6 +32,7 @@ logger = logging.getLogger(__name__)
 # ── Flask App ─────────────────────────────────────
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # 确保中文不转义
+CORS(app)  # 允许跨域访问
 
 
 # ── 定时任务：抓取并存储热点 ──────────────────────
@@ -29,7 +41,7 @@ def scheduled_fetch():
     today = date.today().strftime("%Y-%m-%d")
     logger.info(f"[定时任务] 开始抓取 {today} 热点...")
     try:
-        items = merge_and_rank(limit=20)
+        items = merge_and_rank(limit=30)
         if items:
             upsert_hotspots(today, items)
             logger.info(f"[定时任务] 抓取完成，共 {len(items)} 条")
@@ -37,6 +49,11 @@ def scheduled_fetch():
             logger.warning("[定时任务] 抓取结果为空，跳过写入")
     except Exception as e:
         logger.error(f"[定时任务] 抓取失败: {e}")
+    # 清理7天前的旧数据（保留今天+前6天）
+    try:
+        cleanup_old_data(days=7)
+    except Exception as e:
+        logger.error(f"[定时任务] 清理旧数据失败: {e}")
 
 
 # ── 路由 ──────────────────────────────────────────
@@ -67,7 +84,7 @@ def api_hotspots():
     if not items and date_param in ("today", target_date):
         logger.info(f"[API] {target_date} 无缓存，立即抓取...")
         try:
-            fresh = merge_and_rank(limit=20)
+            fresh = merge_and_rank(limit=30)
             if fresh:
                 upsert_hotspots(target_date, fresh)
                 items = get_hotspots_by_date(target_date)
@@ -95,9 +112,28 @@ def api_stats():
     return jsonify(get_stats())
 
 
+@app.route("/api/version")
+def api_version():
+    """获取当前版本号，供前端检测更新"""
+    return jsonify({
+        "version": get_app_version(),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    """手动触发刷新（管理用）"""
+    """手动触发刷新（管理用，需密码验证）"""
+    # 密码验证
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "2005")
+    try:
+        data = request.get_json(silent=True) or {}
+        password = data.get("password", "")
+        if password != ADMIN_PASSWORD:
+            return jsonify({"status": "error", "message": "密码错误"}), 403
+    except Exception:
+        return jsonify({"status": "error", "message": "验证失败"}), 403
+
     try:
         scheduled_fetch()
         return jsonify({"status": "ok", "message": "刷新成功"})

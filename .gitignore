@@ -31,3 +31,10 @@ desktop.ini
 # Temp files
 *.tmp
 *.bak
+
+# Cloudflared temp logs
+cf-*.txt
+cloudflared-log.txt
+
+# Cloudflared binary (too large for git)
+cloudflared.exe

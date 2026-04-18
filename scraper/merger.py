@@ -4,6 +4,8 @@ import logging
 from .weibo import fetch_weibo_hot
 from .baidu import fetch_baidu_hot
 from .zhihu import fetch_zhihu_hot
+from .douyin import fetch_douyin_hot
+from .kuaishou import fetch_kuaishou_hot
 from .summarizer import enrich_items_with_summary
 
 logger = logging.getLogger(__name__)
@@ -41,8 +43,10 @@ def merge_and_rank(limit: int = 20) -> list:
     weibo_items = fetch_weibo_hot()
     baidu_items = fetch_baidu_hot()
     zhihu_items = fetch_zhihu_hot()
+    douyin_items = fetch_douyin_hot()
+    kuaishou_items = fetch_kuaishou_hot()
 
-    logger.info(f"各平台数据量: 微博={len(weibo_items)}, 百度={len(baidu_items)}, 知乎={len(zhihu_items)}")
+    logger.info(f"各平台数据量: 微博={len(weibo_items)}, 百度={len(baidu_items)}, 知乎={len(zhihu_items)}, 抖音={len(douyin_items)}, 快手={len(kuaishou_items)}")
 
     # 标准化热度值（各平台量级不同，做相对标准化）
     def normalize_hot(items, scale=1.0):
@@ -56,8 +60,10 @@ def merge_and_rank(limit: int = 20) -> list:
     weibo_items = normalize_hot(weibo_items, scale=1.2)  # 微博流量大，权重略高
     baidu_items = normalize_hot(baidu_items, scale=1.0)
     zhihu_items = normalize_hot(zhihu_items, scale=0.9)
+    douyin_items = normalize_hot(douyin_items, scale=1.1)  # 抖音流量大，权重较高
+    kuaishou_items = normalize_hot(kuaishou_items, scale=0.8)  # 快手与抖音用户重叠，权重略低
 
-    all_items = weibo_items + baidu_items + zhihu_items
+    all_items = weibo_items + baidu_items + zhihu_items + douyin_items + kuaishou_items
 
     # 去重
     all_items = deduplicate(all_items)
