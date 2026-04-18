@@ -148,6 +148,7 @@ def create_app():
 
 # ── 入口 ──────────────────────────────────────────
 application = create_app()
+app = application  # 兼容 Gunicorn 默认查找 app 变量
 
 if __name__ == "__main__":
     application.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
