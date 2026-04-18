@@ -2,7 +2,7 @@
    Service Worker - 离线缓存 + 静默更新
    ═══════════════════════════════════════════════ */
 
-const CACHE_NAME = 'hotspot-v8';
+const CACHE_NAME = 'hotspot-v9';
 
 // 需要预缓存的静态资源
 const PRECACHE_URLS = [

@@ -1,16 +1,7 @@
-# Cloudflared Named Tunnel 配置文件
-# 使用方法：
-#   1. 先在 ClouDNS 申请免费域名（如 prenceyours.cloudns.cc）
-#   2. 将域名托管到 Cloudflare（修改 Nameserver）
-#   3. 运行 cloudflared.exe login 登录
-#   4. 运行 cloudflared.exe tunnel create hotspot  创建隧道
-#   5. 把下面的 YOUR-DOMAIN 替换为你的实际域名
-#   6. 把 tunnel 名和 credentials-file 中的 ID 替换为你创建的隧道 ID
-
-tunnel: YOUR-TUNNEL-ID
-credentials-file: C:\Users\ZhuanZ\.cloudflared\YOUR-TUNNEL-ID.json
+tunnel: 8b55dac2-3d47-41cd-874d-1e9a3593dc11
+credentials-file: C:\Users\ZhuanZ\.cloudflared\8b55dac2-3d47-41cd-874d-1e9a3593dc11.json
 
 ingress:
-  - hostname: YOUR-DOMAIN
+  - hostname: prenceyours.xyz
     service: http://localhost:5000
   - service: http_status:404

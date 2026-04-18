@@ -10,8 +10,7 @@ echo.
 
 REM ── 配置区域（按实际情况修改） ──
 set TUNNEL_NAME=hotspot
-set DOMAIN=YOUR-DOMAIN
-REM 例如: set DOMAIN=prenceyours.cloudns.cc
+set DOMAIN=prenceyours.xyz
 REM ──────────────────────────────────
 
 REM 检查 cloudflared 是否已登录
@@ -32,7 +31,7 @@ if not exist "%USERPROFILE%\.cloudflared\cert.pem" (
 )
 
 REM 检查 tunnel 是否已创建
-if not exist "%USERPROFILE%\.cloudflared\%TUNNEL_NAME%.json" (
+if not exist "%USERPROFILE%\.cloudflared\8b55dac2-3d47-41cd-874d-1e9a3593dc11.json" (
     echo [!] 未检测到 named tunnel 配置
     echo [!] 正在创建 tunnel [%TUNNEL_NAME%]...
     cloudflared.exe tunnel create %TUNNEL_NAME%
