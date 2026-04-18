@@ -41,12 +41,6 @@ const installClose   = $('installClose');
 const installSteps   = $('installSteps');
 const installActionBtn = $('installActionBtn');
 const datePills     = $('datePills');
-const passwordOverlay = $('passwordOverlay');
-const passwordInput   = $('passwordInput');
-const passwordClose   = $('passwordClose');
-const passwordConfirm = $('passwordConfirm');
-const passwordError   = $('passwordError');
-const passwordToggle  = $('passwordToggle');
 
 // ── 浏览器检测 ───────────────────────────────
 function detectBrowser() {
@@ -588,55 +582,6 @@ function initParticles() {
   draw();
 }
 
-// ── 密码验证 ───────────────────────────────
-let _passwordCallback = null;
-
-function showPasswordModal(callback) {
-  _passwordCallback = callback;
-  passwordInput.value = '';
-  passwordError.classList.add('hidden');
-  passwordOverlay.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  setTimeout(() => passwordInput.focus(), 100);
-}
-
-function closePasswordModal() {
-  passwordOverlay.classList.add('hidden');
-  document.body.style.overflow = '';
-  _passwordCallback = null;
-}
-
-async function verifyPassword() {
-  const pwd = passwordInput.value.trim();
-  if (!pwd) {
-    passwordError.textContent = '请输入密码';
-    passwordError.classList.remove('hidden');
-    return;
-  }
-  try {
-    const res = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd })
-    });
-    if (res.status === 403) {
-      passwordError.textContent = '密码错误，请重试';
-      passwordError.classList.remove('hidden');
-      passwordInput.value = '';
-      passwordInput.focus();
-      return;
-    }
-    if (!res.ok) throw new Error('验证失败');
-    // 密码正确
-    closePasswordModal();
-    showToast('验证通过，正在刷新...');
-    if (_passwordCallback) _passwordCallback();
-  } catch (e) {
-    passwordError.textContent = '验证失败，请重试';
-    passwordError.classList.remove('hidden');
-  }
-}
-
 // ── 事件绑定 ───────────────────────────────
 $('prevDay').addEventListener('click', () => changeDate(-1));
 $('nextDay').addEventListener('click', () => changeDate(1));
@@ -651,12 +596,21 @@ document.querySelectorAll('.tab').forEach(btn => {
 });
 
 refreshBtn.addEventListener('click', () => {
-  showPasswordModal(() => {
-    refreshBtn.classList.add('spinning');
-    loadHotspots(state.currentDate).finally(() => {
+  refreshBtn.classList.add('spinning');
+  fetch('/api/refresh', { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        showToast('刷新成功');
+        loadHotspots(state.currentDate);
+      } else {
+        showToast('刷新失败：' + (data.message || '未知错误'));
+      }
+    })
+    .catch(() => showToast('刷新失败，请重试'))
+    .finally(() => {
       setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
     });
-  });
 });
 
 shareBtn.addEventListener('click', copyLink);
@@ -681,24 +635,10 @@ modalOverlay.addEventListener('click', (e) => {
   if (e.target === modalOverlay) closeModal();
 });
 
-// 密码弹窗事件
-passwordClose.addEventListener('click', closePasswordModal);
-passwordOverlay.addEventListener('click', (e) => {
-  if (e.target === passwordOverlay) closePasswordModal();
-});
-passwordConfirm.addEventListener('click', verifyPassword);
-passwordInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') verifyPassword();
-});
-passwordToggle.addEventListener('click', () => {
-  const isPassword = passwordInput.type === 'password';
-  passwordInput.type = isPassword ? 'text' : 'password';
-});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeModal();
     closeInstallGuide();
-    closePasswordModal();
   }
 });
 

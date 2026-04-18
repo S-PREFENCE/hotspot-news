@@ -123,17 +123,7 @@ def api_version():
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    """手动触发刷新（管理用，需密码验证）"""
-    # 密码验证
-    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "2005")
-    try:
-        data = request.get_json(silent=True) or {}
-        password = data.get("password", "")
-        if password != ADMIN_PASSWORD:
-            return jsonify({"status": "error", "message": "密码错误"}), 403
-    except Exception:
-        return jsonify({"status": "error", "message": "验证失败"}), 403
-
+    """手动触发刷新"""
     try:
         scheduled_fetch()
         return jsonify({"status": "ok", "message": "刷新成功"})
