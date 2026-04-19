@@ -58,19 +58,44 @@ def normalize_title(title: str) -> str:
 
 
 def deduplicate(items: list) -> list:
-    """去除标题高度相似的条目，优先保留热度更高的"""
-    seen = {}
+    """去除标题高度相似的条目，跨平台同标题保留不同source以确保平台多样性"""
+    # 第1步：同平台内去重（同source + 相似标题 -> 保留热度最高的）
+    source_groups = {}
     for item in items:
+        source = item.get("source", "unknown")
+        if source not in source_groups:
+            source_groups[source] = {}
         key = normalize_title(item["title"])
-        # 截取前8个字符作为相似度 key
         short_key = key[:8] if len(key) >= 8 else key
-        if short_key not in seen:
-            seen[short_key] = item
+        
+        if short_key not in source_groups[source]:
+            source_groups[source][short_key] = item
         else:
-            # 保留热度更高的
-            if item["hot_value"] > seen[short_key]["hot_value"]:
-                seen[short_key] = item
-    return list(seen.values())
+            if item["hot_value"] > source_groups[source][short_key]["hot_value"]:
+                source_groups[source][short_key] = item
+    
+    # 第2步：合并所有平台，跨平台相同标题只保留热度最高的那个
+    result = {}
+    for source, group in source_groups.items():
+        for short_key, item in group.items():
+            if short_key not in result:
+                result[short_key] = item
+            else:
+                existing = result[short_key]
+                existing_source = existing.get("source", "")
+                # 不同平台：两者都保留（用composite key区分）
+                if existing_source != source:
+                    composite_existing = f"{short_key}|{existing_source}"
+                    composite_new = f"{short_key}|{source}"
+                    result[composite_existing] = existing
+                    result[composite_new] = item
+                    del result[short_key]
+                else:
+                    # 同平台：保留热度更高的
+                    if item["hot_value"] > existing["hot_value"]:
+                        result[short_key] = item
+    
+    return list(result.values())
 
 
 def merge_and_rank(limit: int = 30) -> list:
@@ -109,7 +134,7 @@ def merge_and_rank(limit: int = 30) -> list:
     weibo_items = normalize_hot(weibo_items, scale=1.2)
     baidu_items = normalize_hot(baidu_items, scale=1.0)
     douyin_items = normalize_hot(douyin_items, scale=1.1)
-    kuaishou_items = normalize_hot(kuaishou_items, scale=0.8)
+    kuaishou_items = normalize_hot(kuaishou_items, scale=1.0)
     bilibili_items = normalize_hot(bilibili_items, scale=0.9)
     ithome_items = normalize_hot(ithome_items, scale=1.0)
     sina_finance_items = normalize_hot(sina_finance_items, scale=0.9)
