@@ -54,8 +54,8 @@ def scheduled_fetch():
     today = date.today().strftime("%Y-%m-%d")
     logger.info(f"[定时任务] 开始抓取 {today} 热点...")
     try:
-        items = merge_and_rank(limit=30)
-        if items:
+        items = merge_and_rank(limit=35)
+    if items:
             upsert_hotspots(today, items)
             logger.info(f"[定时任务] 抓取完成，共 {len(items)} 条")
         else:
@@ -115,7 +115,7 @@ def api_hotspots():
     if not items and date_param in ("today", target_date):
         logger.info(f"[API] {target_date} 无缓存，立即抓取...")
         try:
-            fresh = merge_and_rank(limit=30)
+            fresh = merge_and_rank(limit=35)
             if fresh:
                 upsert_hotspots(target_date, fresh)
                 items = get_hotspots_by_date(target_date, source=source, tag=tag)

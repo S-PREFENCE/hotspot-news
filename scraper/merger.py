@@ -138,7 +138,7 @@ def merge_and_rank(limit: int = 30) -> list:
     bilibili_items = normalize_hot(bilibili_items, scale=0.9)
     ithome_items = normalize_hot(ithome_items, scale=1.0)
     sina_finance_items = normalize_hot(sina_finance_items, scale=0.9)
-    pengpai_items = normalize_hot(pengpai_items, scale=0.85)
+    pengpai_items = normalize_hot(pengpai_items, scale=1.0)
 
     all_items = (
         weibo_items + baidu_items + douyin_items + kuaishou_items +
