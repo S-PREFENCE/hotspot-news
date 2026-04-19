@@ -1,4 +1,4 @@
-"""Flask 主应用"""
+"""Flask 主应用 v3.0 - 智能多维热点热榜系统"""
 import logging
 import os
 from datetime import datetime, date, timedelta
@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import atexit
 
-from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_available_dates, get_stats, cleanup_old_data
+from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_available_dates, get_stats, cleanup_old_data, get_available_sources
 from scraper.merger import merge_and_rank
 
 # ── 版本号 ─────────────────────────────────────────
@@ -33,6 +33,19 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # 确保中文不转义
 CORS(app)  # 允许跨域访问
+
+# ── 平台配置（v3.0） ─────────────────────────────
+PLATFORM_CONFIG = {
+    "weibo":        {"label": "微博",     "color": "#E6162D", "enabled": True},
+    "baidu":        {"label": "百度",     "color": "#4E6EF2", "enabled": True},
+    "douyin":       {"label": "抖音",     "color": "#FE2C55", "enabled": True},
+    "kuaishou":     {"label": "快手",     "color": "#FF4906", "enabled": True},
+    "bilibili":     {"label": "B站",      "color": "#00A1D6", "enabled": True},
+    "ithome":       {"label": "IT之家",   "color": "#D63031", "enabled": True},
+    "sina_finance": {"label": "新浪财经", "color": "#F39C12", "enabled": True},
+    "pengpai":      {"label": "澎湃新闻", "color": "#2ECC71", "enabled": True},
+    # "zhihu":      {"label": "知乎",     "color": "#0084FF", "enabled": False},  # v3.0: 默认移除
+}
 
 
 # ── 定时任务：抓取并存储热点 ──────────────────────
@@ -67,18 +80,36 @@ def api_hotspots():
     """
     获取指定日期热点
     参数: ?date=YYYY-MM-DD 或 ?date=today 或 ?date=yesterday
+          ?source=weibo  按平台筛选
+          ?tag=AI        按标签筛选
     """
     date_param = request.args.get("date", "today")
+    source = request.args.get("source", None)
+    tag = request.args.get("tag", None)
     today = date.today()
 
     if date_param == "today":
         target_date = today.strftime("%Y-%m-%d")
     elif date_param == "yesterday":
         target_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    elif date_param == "day_before":
+        target_date = (today - timedelta(days=2)).strftime("%Y-%m-%d")
+    elif date_param == "week":
+        target_date = (today - timedelta(days=6)).strftime("%Y-%m-%d")
     else:
         target_date = date_param
 
-    items = get_hotspots_by_date(target_date)
+    # 如果是"近7天"模式，查询最近7天所有数据
+    if date_param == "week":
+        items = []
+        for i in range(7):
+            d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            day_items = get_hotspots_by_date(d, source=source, tag=tag)
+            items.extend(day_items)
+        # 按热度排序
+        items.sort(key=lambda x: x.get("hot_value", 0), reverse=True)
+    else:
+        items = get_hotspots_by_date(target_date, source=source, tag=tag)
 
     # 如果当天没有数据，立即触发一次抓取
     if not items and date_param in ("today", target_date):
@@ -87,7 +118,7 @@ def api_hotspots():
             fresh = merge_and_rank(limit=30)
             if fresh:
                 upsert_hotspots(target_date, fresh)
-                items = get_hotspots_by_date(target_date)
+                items = get_hotspots_by_date(target_date, source=source, tag=tag)
         except Exception as e:
             logger.error(f"[API] 即时抓取失败: {e}")
 
@@ -104,6 +135,28 @@ def api_dates():
     """获取有数据的日期列表"""
     dates = get_available_dates(limit=7)
     return jsonify({"dates": dates})
+
+
+@app.route("/api/sources")
+def api_sources():
+    """获取平台配置列表"""
+    return jsonify({"platforms": PLATFORM_CONFIG})
+
+
+@app.route("/api/tags")
+def api_tags():
+    """获取指定日期可用的标签列表"""
+    date_param = request.args.get("date", "today")
+    today = date.today()
+    if date_param == "today":
+        target_date = today.strftime("%Y-%m-%d")
+    elif date_param == "yesterday":
+        target_date = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        target_date = date_param
+    from models.database import get_available_tags
+    tags = get_available_tags(target_date)
+    return jsonify({"tags": tags})
 
 
 @app.route("/api/stats")

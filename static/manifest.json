@@ -1,7 +1,7 @@
 {
-  "name": "PrenceYours 2026 · 实时热搜",
+  "name": "PrenceYours 2026 · 智能多维热榜",
   "short_name": "PrenceYours",
-  "description": "PrenceYours 2026 - 实时追踪微博、百度、知乎、抖音、快手热点，每天热门话题一目了然",
+  "description": "PrenceYours 2026 - 智能聚合微博、百度、抖音、B站、虎嗅、财联社、国际头条，支持领域筛选+历史回溯",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0F0E17",

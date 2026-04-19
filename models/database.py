@@ -1,7 +1,8 @@
-"""SQLite 数据库操作模块"""
+"""SQLite 数据库操作模块 v3.0"""
 import sqlite3
 import logging
 import os
+import json
 from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
@@ -31,20 +32,24 @@ def init_db():
                 url         TEXT    DEFAULT '',
                 summary     TEXT    DEFAULT '',
                 keywords    TEXT    DEFAULT '',
+                tags        TEXT    DEFAULT '',
                 created_at  TEXT    DEFAULT (datetime('now', 'localtime'))
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_date ON hotspots(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_source ON hotspots(source)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON hotspots(category)")
 
         # 兼容旧表：自动添加新字段
-        try:
-            conn.execute("ALTER TABLE hotspots ADD COLUMN summary TEXT DEFAULT ''")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE hotspots ADD COLUMN keywords TEXT DEFAULT ''")
-        except Exception:
-            pass
+        for col, default in [
+            ("summary", "TEXT DEFAULT ''"),
+            ("keywords", "TEXT DEFAULT ''"),
+            ("tags", "TEXT DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE hotspots ADD COLUMN {col} {default}")
+            except Exception:
+                pass
 
         conn.commit()
         logger.info("数据库初始化完成")
@@ -65,8 +70,8 @@ def upsert_hotspots(date_str: str, items: list):
         # 删除当天旧数据，重新写入（保持最新快照）
         conn.execute("DELETE FROM hotspots WHERE date = ?", (date_str,))
         conn.executemany(
-            """INSERT INTO hotspots (date, rank, title, hot_value, source, category, url, summary, keywords)
-               VALUES (:date, :rank, :title, :hot_value, :source, :category, :url, :summary, :keywords)""",
+            """INSERT INTO hotspots (date, rank, title, hot_value, source, category, url, summary, keywords, tags)
+               VALUES (:date, :rank, :title, :hot_value, :source, :category, :url, :summary, :keywords, :tags)""",
             [{**item, "date": date_str} for item in items]
         )
         conn.commit()
@@ -79,14 +84,24 @@ def upsert_hotspots(date_str: str, items: list):
         conn.close()
 
 
-def get_hotspots_by_date(date_str: str) -> list:
-    """按日期查询热点列表"""
+def get_hotspots_by_date(date_str: str, source: str = None, tag: str = None) -> list:
+    """按日期查询热点列表，可选按平台和标签筛选"""
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT * FROM hotspots WHERE date = ? ORDER BY rank ASC",
-            (date_str,)
-        ).fetchall()
+        query = "SELECT * FROM hotspots WHERE date = ?"
+        params = [date_str]
+
+        if source and source != "all":
+            query += " AND source = ?"
+            params.append(source)
+
+        if tag and tag != "全部":
+            # tags字段存储为JSON数组字符串，用LIKE匹配
+            query += " AND tags LIKE ?"
+            params.append(f'%"{tag}"%')
+
+        query += " ORDER BY rank ASC"
+        rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
@@ -101,6 +116,39 @@ def get_available_dates(limit: int = 7) -> list:
             (limit,)
         ).fetchall()
         return [row["date"] for row in rows]
+    finally:
+        conn.close()
+
+
+def get_available_sources(date_str: str) -> list:
+    """获取指定日期有哪些平台的数据"""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT source FROM hotspots WHERE date = ? ORDER BY source",
+            (date_str,)
+        ).fetchall()
+        return [row["source"] for row in rows]
+    finally:
+        conn.close()
+
+
+def get_available_tags(date_str: str) -> list:
+    """获取指定日期所有可用的标签"""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT tags FROM hotspots WHERE date = ? AND tags != ''",
+            (date_str,)
+        ).fetchall()
+        all_tags = set()
+        for row in rows:
+            try:
+                tags = json.loads(row["tags"]) if row["tags"] else []
+                all_tags.update(tags)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return sorted(all_tags)
     finally:
         conn.close()
 
@@ -128,6 +176,10 @@ def get_stats() -> dict:
         total = conn.execute("SELECT COUNT(*) as cnt FROM hotspots").fetchone()["cnt"]
         dates = conn.execute("SELECT COUNT(DISTINCT date) as cnt FROM hotspots").fetchone()["cnt"]
         latest = conn.execute("SELECT MAX(created_at) as t FROM hotspots").fetchone()["t"]
-        return {"total_records": total, "total_dates": dates, "last_updated": latest}
+        sources = conn.execute("SELECT COUNT(DISTINCT source) as cnt FROM hotspots").fetchone()["cnt"]
+        return {"total_records": total, "total_dates": dates, "total_sources": sources, "last_updated": latest}
     finally:
         conn.close()
+
+
+
