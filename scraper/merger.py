@@ -6,7 +6,7 @@ from .weibo import fetch_weibo_hot
 from .baidu import fetch_baidu_hot
 # from .zhihu import fetch_zhihu_hot  # v3.0: 默认移除知乎
 from .douyin import fetch_douyin_hot
-from .kuaishou import fetch_kuaishou_hot
+# from .kuaishou import fetch_kuaishou_hot  # v3.1: 移除快手
 from .bilibili import fetch_bilibili_hot
 from .ithome import fetch_ithome_hot
 from .sina_finance import fetch_sina_finance_hot
@@ -109,7 +109,7 @@ def merge_and_rank(limit: int = 30) -> list:
     baidu_items = fetch_baidu_hot()
     # zhihu_items = fetch_zhihu_hot()  # v3.0: 默认移除
     douyin_items = fetch_douyin_hot()
-    kuaishou_items = fetch_kuaishou_hot()
+    # kuaishou_items = fetch_kuaishou_hot()  # v3.1: 移除快手
     bilibili_items = fetch_bilibili_hot()
     ithome_items = fetch_ithome_hot()
     sina_finance_items = fetch_sina_finance_hot()
@@ -117,7 +117,7 @@ def merge_and_rank(limit: int = 30) -> list:
 
     logger.info(
         f"各平台数据量: 微博={len(weibo_items)}, 百度={len(baidu_items)}, "
-        f"抖音={len(douyin_items)}, 快手={len(kuaishou_items)}, "
+        f"抖音={len(douyin_items)}, "
         f"B站={len(bilibili_items)}, IT之家={len(ithome_items)}, "
         f"新浪财经={len(sina_finance_items)}, 澎湃={len(pengpai_items)}"
     )
@@ -134,14 +134,13 @@ def merge_and_rank(limit: int = 30) -> list:
     weibo_items = normalize_hot(weibo_items, scale=1.2)
     baidu_items = normalize_hot(baidu_items, scale=1.0)
     douyin_items = normalize_hot(douyin_items, scale=1.1)
-    kuaishou_items = normalize_hot(kuaishou_items, scale=1.0)
     bilibili_items = normalize_hot(bilibili_items, scale=0.9)
     ithome_items = normalize_hot(ithome_items, scale=1.0)
     sina_finance_items = normalize_hot(sina_finance_items, scale=0.9)
     pengpai_items = normalize_hot(pengpai_items, scale=1.0)
 
     all_items = (
-        weibo_items + baidu_items + douyin_items + kuaishou_items +
+        weibo_items + baidu_items + douyin_items +
         bilibili_items + ithome_items + sina_finance_items + pengpai_items
     )
 

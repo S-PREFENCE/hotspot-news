@@ -39,7 +39,7 @@ PLATFORM_CONFIG = {
     "weibo":        {"label": "微博",     "color": "#E6162D", "enabled": True},
     "baidu":        {"label": "百度",     "color": "#4E6EF2", "enabled": True},
     "douyin":       {"label": "抖音",     "color": "#FE2C55", "enabled": True},
-    "kuaishou":     {"label": "快手",     "color": "#FF4906", "enabled": True},
+    "kuaishou":     {"label": "快手",     "color": "#FF4906", "enabled": False},  # v3.1: 移除快手
     "bilibili":     {"label": "B站",      "color": "#00A1D6", "enabled": True},
     "ithome":       {"label": "IT之家",   "color": "#D63031", "enabled": True},
     "sina_finance": {"label": "新浪财经", "color": "#F39C12", "enabled": True},
@@ -183,27 +183,6 @@ def api_refresh():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-@app.route("/api/debug/kuaishou")
-def api_debug_kuaishou():
-    """调试端点：测试快手各通道在当前服务器的可达性"""
-    from scraper.kuaishou import (
-        _fetch_via_graphql_pc, _fetch_via_graphql_app,
-        _fetch_via_graphql_full_headers, _fetch_via_toutiao
-    )
-    results = {}
-    for name, func in [
-        ("pc_graphql", _fetch_via_graphql_pc),
-        ("app_graphql", _fetch_via_graphql_app),
-        ("full_headers_graphql", _fetch_via_graphql_full_headers),
-        ("toutiao_fallback", _fetch_via_toutiao),
-    ]:
-        try:
-            items = func()
-            results[name] = {"status": "ok" if items else "empty", "count": len(items)}
-        except Exception as e:
-            results[name] = {"status": "error", "message": str(e)[:200]}
-    return jsonify(results)
 
 
 # ── PWA 路由 ──────────────────────────────────────
