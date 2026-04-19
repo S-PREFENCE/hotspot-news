@@ -38,3 +38,6 @@ cloudflared-log.txt
 
 # Cloudflared binary (too large for git)
 cloudflared.exe
+
+# Test files
+test_*.py
