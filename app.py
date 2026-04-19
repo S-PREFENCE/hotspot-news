@@ -184,6 +184,28 @@ def api_refresh():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/debug/kuaishou")
+def api_debug_kuaishou():
+    """调试端点：测试快手各通道在当前服务器的可达性"""
+    from scraper.kuaishou import (
+        _fetch_via_graphql_pc, _fetch_via_graphql_app,
+        _fetch_via_graphql_full_headers, _fetch_via_toutiao
+    )
+    results = {}
+    for name, func in [
+        ("pc_graphql", _fetch_via_graphql_pc),
+        ("app_graphql", _fetch_via_graphql_app),
+        ("full_headers_graphql", _fetch_via_graphql_full_headers),
+        ("toutiao_fallback", _fetch_via_toutiao),
+    ]:
+        try:
+            items = func()
+            results[name] = {"status": "ok" if items else "empty", "count": len(items)}
+        except Exception as e:
+            results[name] = {"status": "error", "message": str(e)[:200]}
+    return jsonify(results)
+
+
 # ── PWA 路由 ──────────────────────────────────────
 @app.route("/sw.js")
 def service_worker():
