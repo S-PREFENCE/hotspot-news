@@ -105,7 +105,9 @@ def enrich_items_with_summary(items: list) -> list:
     """批量为热点列表添加摘要字段"""
     import json
     for item in items:
-        item["summary"] = generate_summary(item.get("title", ""))
-        kws = extract_keywords(item.get("title", ""))
-        item["keywords"] = json.dumps(kws, ensure_ascii=False) if kws else ""
+        keywords = extract_keywords(item.get("title", ""))
+        cause = classify_cause(item.get("title", ""), keywords)
+        kw_str = "、".join(keywords) if keywords else "综合热点"
+        item["summary"] = f"关键词: {kw_str} | 事件性质: {cause}"
+        item["keywords"] = json.dumps(keywords, ensure_ascii=False) if keywords else ""
     return items

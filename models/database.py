@@ -13,6 +13,10 @@ DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), ".."
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # 启用WAL模式，提高并发读写性能
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=2000")
     return conn
 
 
@@ -39,6 +43,10 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_date ON hotspots(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_source ON hotspots(source)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON hotspots(category)")
+        # 复合索引：常用查询 WHERE date=? AND source=?
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_date_source ON hotspots(date, source)")
+        # 复合索引：近7天查询
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_date_rank ON hotspots(date, rank)")
 
         # 兼容旧表：自动添加新字段
         for col, default in [
@@ -108,6 +116,38 @@ def get_hotspots_by_date(date_str: str, source: str = None, tag: str = None) -> 
 
 
 def get_available_dates(limit: int = 7) -> list:
+    """获取有数据的日期列表（最近 N 天）"""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT date FROM hotspots ORDER BY date DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [row["date"] for row in rows]
+    finally:
+        conn.close()
+
+
+def get_hotspots_by_date_range(start_date: str, end_date: str, source: str = None, tag: str = None) -> list:
+    """按日期范围查询热点列表（单次SQL代替多次查询）"""
+    conn = get_connection()
+    try:
+        query = "SELECT * FROM hotspots WHERE date BETWEEN ? AND ?"
+        params = [start_date, end_date]
+
+        if source and source != "all":
+            query += " AND source = ?"
+            params.append(source)
+
+        if tag and tag != "全部":
+            query += " AND tags LIKE ?"
+            params.append(f'%"{tag}"%')
+
+        query += " ORDER BY date DESC, rank ASC"
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
     """获取有数据的日期列表（最近 N 天）"""
     conn = get_connection()
     try:

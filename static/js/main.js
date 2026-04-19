@@ -347,6 +347,20 @@ function handleSearch() {
   renderList(filtered);
 }
 
+// ── 带超时的 fetch ──────────────────────────
+async function fetchWithTimeout(url, timeout = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
 // ── 加载数据 ───────────────────────────────
 async function loadHotspots(dateStr, silent = false) {
   if (!silent) {
@@ -361,7 +375,7 @@ async function loadHotspots(dateStr, silent = false) {
     if (source) url += `&source=${source}`;
     if (tag) url += `&tag=${tag}`;
 
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, 12000);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state.allItems = data.items || [];
@@ -586,11 +600,14 @@ refreshBtn.addEventListener('click', () => {
   fetch('/api/refresh', { method: 'POST' })
     .then(res => res.json())
     .then(data => {
-      if (data.status === 'ok') { showToast('刷新成功'); loadHotspots(state.currentDate); }
-      else showToast('刷新失败：' + (data.message || '未知错误'));
+      showToast('刷新已触发');
+      // 等待3秒后自动加载新数据
+      setTimeout(() => {
+        loadHotspots(state.currentDate, true)
+          .finally(() => refreshBtn.classList.remove('spinning'));
+      }, 3000);
     })
-    .catch(() => showToast('刷新失败，请重试'))
-    .finally(() => { setTimeout(() => refreshBtn.classList.remove('spinning'), 600); });
+    .catch(() => { showToast('刷新失败，请重试'); refreshBtn.classList.remove('spinning'); });
 });
 
 shareBtn.addEventListener('click', copyLink);
@@ -642,12 +659,17 @@ async function checkVersionUpdate() {
   } catch(e) {}
 
   state.weekDates = generateWeekDates();
-  state.availableDates = await fetchAvailableDates();
   state.currentDate = toDateStr(new Date());
 
+  // 并行加载：dates和hotspots同时请求
   renderSourceTabs();
+  const [dates] = await Promise.all([
+    fetchAvailableDates(),
+    (async () => { setTimeMode('today'); })()  // 这会触发loadHotspots
+  ]);
+  state.availableDates = dates;
   renderDatePills();
-  setTimeMode('today');
+
   startAutoRefresh();
   initParticles();
 

@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import atexit
 
-from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_available_dates, get_stats, cleanup_old_data, get_available_sources
+from models.database import init_db, upsert_hotspots, get_hotspots_by_date, get_hotspots_by_date_range, get_available_dates, get_stats, cleanup_old_data, get_available_sources
 from scraper.merger import merge_and_rank
 
 # ── 版本号 ─────────────────────────────────────────
@@ -99,28 +99,30 @@ def api_hotspots():
     else:
         target_date = date_param
 
-    # 如果是"近7天"模式，查询最近7天所有数据
+    # 如果是"近7天"模式，单次查询7天数据
     if date_param == "week":
-        items = []
-        for i in range(7):
-            d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
-            day_items = get_hotspots_by_date(d, source=source, tag=tag)
-            items.extend(day_items)
-        # 按热度排序
+        week_start = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        week_end = today.strftime("%Y-%m-%d")
+        items = get_hotspots_by_date_range(week_start, week_end, source=source, tag=tag)
         items.sort(key=lambda x: x.get("hot_value", 0), reverse=True)
     else:
         items = get_hotspots_by_date(target_date, source=source, tag=tag)
 
-    # 如果当天没有数据，立即触发一次抓取
+    # 如果当天没有数据，后台异步抓取（不阻塞响应）
     if not items and date_param in ("today", target_date):
-        logger.info(f"[API] {target_date} 无缓存，立即抓取...")
+        logger.info(f"[API] {target_date} 无缓存，后台触发抓取...")
         try:
-            fresh = merge_and_rank(limit=35)
-            if fresh:
-                upsert_hotspots(target_date, fresh)
-                items = get_hotspots_by_date(target_date, source=source, tag=tag)
+            import threading
+            def _bg_fetch():
+                try:
+                    fresh = merge_and_rank(limit=35)
+                    if fresh:
+                        upsert_hotspots(target_date, fresh)
+                except Exception as e:
+                    logger.error(f"[API] 后台抓取失败: {e}")
+            threading.Thread(target=_bg_fetch, daemon=True).start()
         except Exception as e:
-            logger.error(f"[API] 即时抓取失败: {e}")
+            logger.error(f"[API] 启动后台抓取失败: {e}")
 
     return jsonify({
         "date": target_date,
@@ -176,10 +178,16 @@ def api_version():
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    """手动触发刷新"""
+    """手动触发刷新（后台异步）"""
     try:
-        scheduled_fetch()
-        return jsonify({"status": "ok", "message": "刷新成功"})
+        import threading
+        def _bg_refresh():
+            try:
+                scheduled_fetch()
+            except Exception as e:
+                logger.error(f"后台刷新失败: {e}")
+        threading.Thread(target=_bg_refresh, daemon=True).start()
+        return jsonify({"status": "ok", "message": "刷新已触发，数据将在几秒后更新"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -205,8 +213,16 @@ def create_app():
     # 初始化数据库
     init_db()
 
-    # 启动时立即抓取一次
-    scheduled_fetch()
+    # 启动时异步抓取（不阻塞服务就绪）
+    import threading
+    def _initial_fetch():
+        try:
+            scheduled_fetch()
+        except Exception as e:
+            logger.error(f"初始抓取失败: {e}")
+    t = threading.Thread(target=_initial_fetch, daemon=True)
+    t.start()
+    logger.info("初始抓取已在后台启动，服务可立即响应请求")
 
     # 配置定时任务（每小时抓取一次）
     scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
