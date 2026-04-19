@@ -1,4 +1,9 @@
-"""快手热榜抓取模块 v2 — 多通道容错"""
+"""快手热榜抓取模块 v3 — 多通道容错（含头条降级）
+通道1: 快手PC GraphQL（国内优先）
+通道2: 快手APP GraphQL（海外友好）
+通道3: 快手完整头 GraphQL
+通道4: 今日头条热榜（终极降级，海外可用）
+"""
 import requests
 import logging
 import re
@@ -6,16 +11,8 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# 通道1：快手 GraphQL API（免费、无需认证）
+# ── 快手 API ──────────────────────────────────────
 KUAISHOU_GRAPHQL_URL = "https://www.kuaishou.com/graphql"
-
-# 通道2：快手 APP 端 GraphQL（不同UA，海外IP友好）
-KUAISHOU_GRAPHQL_URL_ALT = "https://www.kuaishou.com/graphql"
-
-# 通道3：第三方热榜聚合API
-THIRD_PARTY_APIS = [
-    "https://api.cunyuapi.top/api/kshot",
-]
 
 HEADERS_PC = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -29,6 +26,16 @@ HEADERS_APP = {
     "User-Agent": "kwai-android",
     "Content-Type": "application/json",
     "Accept": "*/*",
+}
+
+# ── 今日头条 API（终极降级通道）──────────────────
+TOUTIAO_API_URL = "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc"
+
+HEADERS_TOUTIAO = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Referer": "https://www.toutiao.com/",
+    "Accept": "application/json",
 }
 
 CATEGORY_KEYWORDS = {
@@ -68,15 +75,15 @@ def parse_hot_value(text) -> int:
     return int(num)
 
 
-def _build_standard_items(raw_items: list, title_key: str = "name", hot_key: str = "hotValue") -> list:
-    """统一构建标准化热点列表"""
+def _build_kuaishou_items(raw_items: list) -> list:
+    """构建快手标准化热点列表"""
     result = []
     for i, item in enumerate(raw_items[:25], 1):
-        title = item.get(title_key, "").strip()
+        title = item.get("name", "").strip()
         if not title:
             continue
 
-        hot_raw = item.get(hot_key, "0")
+        hot_raw = item.get("hotValue", "0")
         if isinstance(hot_raw, (int, float)):
             hot_value = int(hot_raw)
         else:
@@ -89,6 +96,36 @@ def _build_standard_items(raw_items: list, title_key: str = "name", hot_key: str
             "title": title,
             "hot_value": hot_value,
             "source": "kuaishou",
+            "category": classify_category(title),
+            "url": url,
+        })
+    return result
+
+
+def _build_toutiao_items(raw_items: list) -> list:
+    """构建头条标准化热点列表（降级通道，source标记kuaishou以保持前端兼容）"""
+    result = []
+    for i, item in enumerate(raw_items[:25], 1):
+        title = item.get("Title", "").strip()
+        if not title:
+            continue
+
+        hot_value = item.get("HotValue", 0)
+        try:
+            hot_value = int(float(hot_value))
+        except (ValueError, TypeError):
+            hot_value = 0
+
+        url = item.get("Url", "")
+        if not url:
+            cluster_id = item.get("ClusterId", "")
+            url = f"https://www.toutiao.com/trending/{cluster_id}/" if cluster_id else "#"
+
+        result.append({
+            "rank": i,
+            "title": title,
+            "hot_value": hot_value,
+            "source": "kuaishou",  # 保持前端兼容，仍标记为kuaishou
             "category": classify_category(title),
             "url": url,
         })
@@ -117,7 +154,7 @@ def _fetch_via_graphql_pc() -> list:
                  .get("items", [])
         )
         if items:
-            result = _build_standard_items(items)
+            result = _build_kuaishou_items(items)
             logger.info(f"快手热榜抓取成功(PC GraphQL)，共 {len(result)} 条")
             return result
         logger.warning("快手PC GraphQL返回空数据")
@@ -136,7 +173,7 @@ def _fetch_via_graphql_app() -> list:
             "variables": {"page": "1"},
         }
         resp = requests.post(
-            KUAISHOU_GRAPHQL_URL_ALT,
+            KUAISHOU_GRAPHQL_URL,
             json=payload,
             headers=HEADERS_APP,
             timeout=12,
@@ -149,7 +186,7 @@ def _fetch_via_graphql_app() -> list:
                  .get("items", [])
         )
         if items:
-            result = _build_standard_items(items)
+            result = _build_kuaishou_items(items)
             logger.info(f"快手热榜抓取成功(APP GraphQL)，共 {len(result)} 条")
             return result
         logger.warning("快手APP GraphQL返回空数据")
@@ -159,8 +196,8 @@ def _fetch_via_graphql_app() -> list:
         return []
 
 
-def _fetch_via_graphql_with_origin() -> list:
-    """通道3：带Origin头的GraphQL（更完整请求模拟）"""
+def _fetch_via_graphql_full_headers() -> list:
+    """通道3：带完整头的GraphQL"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -190,7 +227,7 @@ def _fetch_via_graphql_with_origin() -> list:
                  .get("items", [])
         )
         if items:
-            result = _build_standard_items(items)
+            result = _build_kuaishou_items(items)
             logger.info(f"快手热榜抓取成功(完整头GraphQL)，共 {len(result)} 条")
             return result
         logger.warning("快手完整头GraphQL返回空数据")
@@ -200,46 +237,37 @@ def _fetch_via_graphql_with_origin() -> list:
         return []
 
 
-def _fetch_via_third_party() -> list:
-    """通道4：第三方聚合API"""
-    for api_url in THIRD_PARTY_APIS:
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            }
-            resp = requests.get(api_url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-
-            # 兼容多种返回格式
-            items = data.get("data", [])
-            if not items and isinstance(data, list):
-                items = data
-
-            if items:
-                # 检测字段名
-                first = items[0]
-                title_key = "name" if "name" in first else ("title" if "title" in first else "word")
-                hot_key = "hotValue" if "hotValue" in first else ("hot" if "hot" in first else "hot_value")
-
-                result = _build_standard_items(items, title_key=title_key, hot_key=hot_key)
-                if result:
-                    logger.info(f"快手热榜抓取成功(第三方API)，共 {len(result)} 条")
-                    return result
-        except Exception as e:
-            logger.warning(f"快手第三方API({api_url})失败: {e}")
-            continue
-    return []
+def _fetch_via_toutiao() -> list:
+    """通道4：今日头条热榜（终极降级，海外可用）"""
+    try:
+        resp = requests.get(
+            TOUTIAO_API_URL,
+            headers=HEADERS_TOUTIAO,
+            timeout=12,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("data", [])
+        if items:
+            result = _build_toutiao_items(items)
+            logger.info(f"快手降级通道(今日头条)抓取成功，共 {len(result)} 条")
+            return result
+        logger.warning("今日头条API返回空数据")
+        return []
+    except Exception as e:
+        logger.warning(f"今日头条降级通道失败: {e}")
+        return []
 
 
 def fetch_kuaishou_hot() -> list:
-    """抓取快手热榜，多通道容错：PC GraphQL → APP GraphQL → 完整头GraphQL → 第三方API"""
+    """抓取快手热榜，4通道容错：
+    1. PC GraphQL → 2. APP GraphQL → 3. 完整头GraphQL → 4. 今日头条降级
+    """
     channels = [
         ("PC GraphQL", _fetch_via_graphql_pc),
         ("APP GraphQL", _fetch_via_graphql_app),
-        ("完整头 GraphQL", _fetch_via_graphql_with_origin),
-        ("第三方API", _fetch_via_third_party),
+        ("完整头 GraphQL", _fetch_via_graphql_full_headers),
+        ("今日头条降级", _fetch_via_toutiao),
     ]
 
     for name, func in channels:
