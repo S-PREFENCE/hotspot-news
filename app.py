@@ -55,7 +55,7 @@ def scheduled_fetch():
     logger.info(f"[定时任务] 开始抓取 {today} 热点...")
     try:
         items = merge_and_rank(limit=35)
-    if items:
+        if items:
             upsert_hotspots(today, items)
             logger.info(f"[定时任务] 抓取完成，共 {len(items)} 条")
         else:
